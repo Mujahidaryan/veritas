@@ -1,0 +1,45 @@
+import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import type { User } from '@veritas/shared-types';
+
+interface AuthState {
+  accessToken: string | null;
+  refreshToken: string | null;
+  user: Partial<User> | null;
+  isAuthenticated: boolean;
+
+  setTokens: (accessToken: string, refreshToken: string) => void;
+  setUser: (user: Partial<User>) => void;
+  logout: () => void;
+}
+
+export const useAuthStore = create<AuthState>()(
+  persist(
+    (set) => ({
+      accessToken: null,
+      refreshToken: null,
+      user: null,
+      isAuthenticated: false,
+
+      setTokens: (accessToken, refreshToken) =>
+        set({ accessToken, refreshToken, isAuthenticated: true }),
+
+      setUser: (user) => set({ user }),
+
+      logout: () =>
+        set({ accessToken: null, refreshToken: null, user: null, isAuthenticated: false }),
+    }),
+    {
+      name: 'veritas-auth',
+      storage: createJSONStorage(() =>
+        typeof window !== 'undefined' ? sessionStorage : ({} as Storage)
+      ),
+      partialize: (state) => ({
+        accessToken: state.accessToken,
+        refreshToken: state.refreshToken,
+        user: state.user,
+        isAuthenticated: state.isAuthenticated,
+      }),
+    },
+  ),
+);

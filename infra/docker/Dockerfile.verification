@@ -1,0 +1,34 @@
+# ── Stage 1: Dependencies ──────────────────────────────────────────
+FROM node:20-alpine AS deps
+WORKDIR /app
+COPY package.json turbo.json ./
+COPY apps/verification-portal/package.json ./apps/verification-portal/
+COPY packages/shared-types/package.json ./packages/shared-types/
+RUN npm install --workspace=apps/verification-portal \
+    --workspace=packages/shared-types --frozen-lockfile
+
+# ── Stage 2: Builder ───────────────────────────────────────────────
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/apps/verification-portal/node_modules ./apps/verification-portal/node_modules
+COPY . .
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN npm run build --workspace=apps/verification-portal
+
+# ── Stage 3: Runner ────────────────────────────────────────────────
+FROM node:20-alpine AS runner
+RUN apk add --no-cache dumb-init
+WORKDIR /app
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+
+RUN addgroup -g 1001 -S veritas && adduser -S veritas -u 1001
+COPY --from=builder --chown=veritas:veritas /app/apps/verification-portal/.next/standalone ./
+COPY --from=builder --chown=veritas:veritas /app/apps/verification-portal/.next/static ./.next/static
+
+USER veritas
+EXPOSE 3001
+
+ENTRYPOINT ["dumb-init", "--"]
+CMD ["node", "server.js"]

@@ -1,0 +1,30 @@
+---
+# Veritas Kubernetes Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: veritas
+  labels:
+    app.kubernetes.io/name: veritas
+    environment: production
+
+---
+# ConfigMap for non-secret configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: veritas-config
+  namespace: veritas
+data:
+  NODE_ENV: "production"
+  PORT: "4000"
+  REDIS_PORT: "6379"
+  THROTTLE_TTL: "60000"
+  THROTTLE_LIMIT: "200"
+  FABRIC_CHANNEL: "veritas-channel"
+  FABRIC_CHAINCODE: "document-registry"
+  FABRIC_MSP_ID: "VeritasMSP"
+  STORAGE_PROVIDER: "gcs"
+  SMTP_PORT: "587"
+  JWT_ACCESS_TTL: "15m"
+  JWT_REFRESH_TTL: "7d"

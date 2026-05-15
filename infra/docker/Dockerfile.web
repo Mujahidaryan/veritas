@@ -1,0 +1,36 @@
+# ── Stage 1: Dependencies ──────────────────────────────────────────
+FROM node:20-alpine AS deps
+WORKDIR /app
+COPY package.json turbo.json ./
+COPY apps/web/package.json ./apps/web/
+COPY packages/shared-types/package.json ./packages/shared-types/
+RUN npm install --workspace=apps/web --workspace=packages/shared-types --frozen-lockfile
+
+# ── Stage 2: Builder ───────────────────────────────────────────────
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/apps/web/node_modules ./apps/web/node_modules
+COPY . .
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN npm run build --workspace=apps/web
+
+# ── Stage 3: Production Runner ─────────────────────────────────────
+FROM node:20-alpine AS runner
+RUN apk add --no-cache dumb-init
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+
+RUN addgroup -g 1001 -S veritas && adduser -S veritas -u 1001
+
+COPY --from=builder /app/apps/web/public ./public
+COPY --from=builder --chown=veritas:veritas /app/apps/web/.next/standalone ./
+COPY --from=builder --chown=veritas:veritas /app/apps/web/.next/static ./.next/static
+
+USER veritas
+EXPOSE 3000
+
+ENTRYPOINT ["dumb-init", "--"]
+CMD ["node", "server.js"]

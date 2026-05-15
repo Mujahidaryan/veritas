@@ -1,0 +1,80 @@
+groups:
+  - name: veritas-api
+    rules:
+      # High error rate
+      - alert: VeritasAPIHighErrorRate
+        expr: |
+          rate(http_requests_total{job="veritas-api", status=~"5.."}[5m]) /
+          rate(http_requests_total{job="veritas-api"}[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "High API error rate (>5%)"
+          description: "API error rate is {{ $value | humanizePercentage }} over the last 5 minutes."
+
+      # High latency
+      - alert: VeritasAPIHighLatency
+        expr: |
+          histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job="veritas-api"}[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API p95 latency above 2 seconds"
+          description: "95th percentile latency is {{ $value }}s."
+
+      # API down
+      - alert: VeritasAPIDown
+        expr: up{job="veritas-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Veritas API is down"
+          description: "API has been unreachable for over 1 minute."
+
+  - name: veritas-database
+    rules:
+      # High connection count
+      - alert: PostgresHighConnections
+        expr: pg_stat_activity_count > 180
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "PostgreSQL connection count approaching limit"
+
+      # Database down
+      - alert: PostgresDown
+        expr: pg_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PostgreSQL is unreachable"
+
+  - name: veritas-business
+    rules:
+      # Tamper detection spike
+      - alert: VeritasTamperSpike
+        expr: |
+          increase(audit_events_total{event_type="verification.tampered"}[10m]) > 5
+        for: 0m
+        labels:
+          severity: warning
+          team: security
+        annotations:
+          summary: "Multiple tamper detection events in 10 minutes"
+          description: "{{ $value }} tamper detection events recorded. Investigate immediately."
+
+      # Document quota nearing limit
+      - alert: TenantQuotaNearingLimit
+        expr: |
+          (tenant_documents_used_this_month / tenant_max_documents_per_month) > 0.90
+        for: 0m
+        labels:
+          severity: info
+        annotations:
+          summary: "Tenant document quota above 90%"

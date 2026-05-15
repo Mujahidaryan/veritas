@@ -1,0 +1,273 @@
+// Veritas — Prisma Database Schema
+// PostgreSQL 16
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Tenants ──────────────────────────────────────────────────────
+
+model Tenant {
+  id                       String       @id @default(uuid())
+  name                     String
+  slug                     String       @unique
+  plan                     TenantPlan   @default(STARTER)
+  status                   TenantStatus @default(TRIAL)
+  logoUrl                  String?
+  primaryDomain            String?
+  verificationDomain       String?
+  ssoEnabled               Boolean      @default(false)
+  ssoProvider              String?      // 'saml' | 'oidc'
+  ssoMetadataUrl           String?
+  mfaRequired              Boolean      @default(false)
+  maxUsers                 Int          @default(3)
+  maxDocumentsPerMonth     Int          @default(500)
+  documentsUsedThisMonth   Int          @default(0)
+  usageResetAt             DateTime     @default(now())
+  fabricChannelId          String?      // Fabric channel per tenant
+  webhookSigningSecret     String       @default("")
+  createdAt                DateTime     @default(now())
+  updatedAt                DateTime     @updatedAt
+
+  users        User[]
+  departments  Department[]
+  documents    Document[]
+  auditEvents  AuditEvent[]
+  apiKeys      ApiKey[]
+  webhooks     Webhook[]
+
+  @@map("tenants")
+}
+
+// ─── Users ────────────────────────────────────────────────────────
+
+model User {
+  id             String     @id @default(uuid())
+  tenantId       String
+  email          String
+  passwordHash   String
+  firstName      String
+  lastName       String
+  role           UserRole   @default(VIEWER)
+  status         UserStatus @default(PENDING)
+  departmentId   String?
+  mfaEnabled     Boolean    @default(false)
+  mfaSecret      String?
+  mfaBackupCodes String[]   @default([])
+  lastLoginAt    DateTime?
+  loginFailures  Int        @default(0)
+  lockedUntil    DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  tenant         Tenant      @relation(fields: [tenantId], references: [id])
+  department     Department? @relation(fields: [departmentId], references: [id])
+  issuedDocuments Document[] @relation("Issuer")
+  auditEvents    AuditEvent[] @relation("Actor")
+  refreshTokens  RefreshToken[]
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@index([email])
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  revoked   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+// ─── Departments ──────────────────────────────────────────────────
+
+model Department {
+  id          String   @id @default(uuid())
+  tenantId    String
+  name        String
+  description String?
+  adminId     String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id])
+  users     User[]
+  documents Document[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("departments")
+}
+
+// ─── Documents ────────────────────────────────────────────────────
+
+model Document {
+  id               String         @id @default(uuid())
+  tenantId         String
+  departmentId     String
+  issuerId         String
+  hashSha256       String         @unique
+  metadataHash     String
+  status           DocumentStatus @default(ACTIVE)
+  documentType     String         @default("custom")
+  title            String
+  issuedTo         String?
+  tags             String[]       @default([])
+  customFields     Json?
+  blockchainTxId   String?
+  blockchainBlock  Int?
+  qrToken          String         @unique
+  qrUrl            String
+  expiresAt        DateTime?
+  revokedAt        DateTime?
+  revokedReason    String?
+  revokedById      String?
+  scanCount        Int            @default(0)
+  lastScannedAt    DateTime?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  tenant     Tenant     @relation(fields: [tenantId], references: [id])
+  department Department @relation(fields: [departmentId], references: [id])
+  issuer     User       @relation("Issuer", fields: [issuerId], references: [id])
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([hashSha256])
+  @@index([qrToken])
+  @@index([issuerId])
+  @@map("documents")
+}
+
+// ─── Audit Events ─────────────────────────────────────────────────
+
+model AuditEvent {
+  id           String   @id @default(uuid())
+  tenantId     String
+  actorId      String?
+  actorEmail   String?
+  eventType    String
+  resourceId   String?
+  resourceType String?
+  ipAddress    String
+  userAgent    String?
+  payload      Json     @default("{}")
+  prevHash     String   // tamper-evident chain
+  createdAt    DateTime @default(now())
+
+  tenant Tenant  @relation(fields: [tenantId], references: [id])
+  actor  User?   @relation("Actor", fields: [actorId], references: [id])
+
+  @@index([tenantId])
+  @@index([tenantId, eventType])
+  @@index([tenantId, createdAt])
+  @@index([actorId])
+  @@index([resourceId])
+  @@map("audit_events")
+}
+
+// ─── API Keys ─────────────────────────────────────────────────────
+
+model ApiKey {
+  id         String    @id @default(uuid())
+  tenantId   String
+  name       String
+  keyHash    String    @unique
+  keyPrefix  String    // first 8 chars for display
+  scopes     String[]  @default([])
+  lastUsedAt DateTime?
+  expiresAt  DateTime?
+  revoked    Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@map("api_keys")
+}
+
+// ─── Webhooks ─────────────────────────────────────────────────────
+
+model Webhook {
+  id        String   @id @default(uuid())
+  tenantId  String
+  url       String
+  events    String[]
+  secret    String
+  active    Boolean  @default(true)
+  failCount Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id])
+  deliveries    WebhookDelivery[]
+
+  @@index([tenantId])
+  @@map("webhooks")
+}
+
+model WebhookDelivery {
+  id           String   @id @default(uuid())
+  webhookId    String
+  event        String
+  payload      Json
+  statusCode   Int?
+  response     String?
+  success      Boolean  @default(false)
+  attempts     Int      @default(1)
+  nextRetryAt  DateTime?
+  createdAt    DateTime @default(now())
+
+  webhook Webhook @relation(fields: [webhookId], references: [id])
+
+  @@index([webhookId])
+  @@map("webhook_deliveries")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────
+
+enum TenantPlan {
+  STARTER
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+enum TenantStatus {
+  TRIAL
+  ACTIVE
+  SUSPENDED
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  ENTERPRISE_ADMIN
+  DEPARTMENT_ADMIN
+  ISSUER
+  VERIFIER
+  VIEWER
+}
+
+enum UserStatus {
+  PENDING
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum DocumentStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
+}

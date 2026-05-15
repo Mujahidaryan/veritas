@@ -1,0 +1,261 @@
+name: Veritas CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  GCP_REGION: asia-south1
+  GKE_CLUSTER: veritas-prod
+  GKE_ZONE: asia-south1-a
+  REGISTRY: gcr.io
+
+jobs:
+  # ─── 1. Lint & Type Check ─────────────────────────────────────────
+  lint:
+    name: Lint & type check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npm run lint
+
+  # ─── 2. Unit Tests ────────────────────────────────────────────────
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    needs: lint
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: veritas
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: veritas_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run database migrations
+        working-directory: apps/api
+        env:
+          DATABASE_URL: postgresql://veritas:test_password@localhost:5432/veritas_test
+        run: npx prisma migrate deploy
+
+      - name: Run tests
+        env:
+          DATABASE_URL: postgresql://veritas:test_password@localhost:5432/veritas_test
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+          JWT_SECRET: test-secret-for-ci-only
+          QR_HMAC_SECRET: test-qr-secret-for-ci
+          STORAGE_ENCRYPTION_KEY: test-encryption-key-32-chars-xxxx
+          NODE_ENV: test
+        run: npm run test
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+
+  # ─── 3. Security Scan ─────────────────────────────────────────────
+  security:
+    name: Security scan (SAST)
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: Dependency audit
+        run: npm audit --audit-level=high
+
+  # ─── 4. Build & Push Docker Images ────────────────────────────────
+  build:
+    name: Build & push images
+    runs-on: ubuntu-latest
+    needs: [test, security]
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    strategy:
+      matrix:
+        service: [api, web, verification]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Setup Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for GCR
+        run: gcloud auth configure-docker gcr.io
+
+      - name: Set image tag
+        id: tag
+        run: |
+          SHA="${{ github.sha }}"
+          echo "TAG=${SHA::8}" >> $GITHUB_OUTPUT
+          echo "FULL_TAG=${{ env.REGISTRY }}/${{ env.GCP_PROJECT_ID }}/veritas-${{ matrix.service }}:${SHA::8}" >> $GITHUB_OUTPUT
+          echo "LATEST_TAG=${{ env.REGISTRY }}/${{ env.GCP_PROJECT_ID }}/veritas-${{ matrix.service }}:latest" >> $GITHUB_OUTPUT
+
+      - name: Build & push image
+        run: |
+          docker build \
+            -f infra/docker/Dockerfile.${{ matrix.service }} \
+            -t ${{ steps.tag.outputs.FULL_TAG }} \
+            -t ${{ steps.tag.outputs.LATEST_TAG }} \
+            .
+          docker push ${{ steps.tag.outputs.FULL_TAG }}
+          docker push ${{ steps.tag.outputs.LATEST_TAG }}
+
+      - name: Scan built image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.tag.outputs.FULL_TAG }}
+          format: 'table'
+          exit-code: '1'
+          severity: 'CRITICAL'
+
+  # ─── 5. Deploy to Staging ─────────────────────────────────────────
+  deploy-staging:
+    name: Deploy to staging
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/develop'
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Get GKE credentials
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: veritas-staging
+          location: ${{ env.GKE_ZONE }}
+
+      - name: Deploy to staging
+        run: |
+          kubectl apply -f infra/k8s/ -n veritas-staging
+          kubectl rollout status deployment/veritas-api -n veritas-staging --timeout=300s
+          kubectl rollout status deployment/veritas-web -n veritas-staging --timeout=300s
+
+      - name: Run smoke tests
+        run: |
+          STAGING_URL="https://api-staging.veritas.io"
+          curl -f "$STAGING_URL/api/health" || exit 1
+          echo "Smoke tests passed"
+
+  # ─── 6. Deploy to Production ──────────────────────────────────────
+  deploy-production:
+    name: Deploy to production
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    environment: production  # Requires manual approval in GitHub
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Get GKE credentials
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ env.GKE_CLUSTER }}
+          location: ${{ env.GKE_ZONE }}
+
+      - name: Run database migrations
+        run: |
+          kubectl exec -n veritas deployment/veritas-api -- \
+            npx prisma migrate deploy
+
+      - name: Deploy to production (blue-green)
+        run: |
+          kubectl apply -f infra/k8s/ -n veritas
+          kubectl rollout status deployment/veritas-api -n veritas --timeout=300s
+          kubectl rollout status deployment/veritas-web -n veritas --timeout=300s
+          kubectl rollout status deployment/veritas-verification -n veritas --timeout=300s
+
+      - name: Verify deployment
+        run: |
+          kubectl get pods -n veritas
+          curl -f "https://api.veritas.io/api/health" || exit 1
+
+      - name: Notify on success
+        if: success()
+        run: |
+          echo "Production deployment successful: ${{ github.sha }}"
+          # Add Slack/Teams notification here
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          echo "Deployment failed — rolling back"
+          kubectl rollout undo deployment/veritas-api -n veritas
+          kubectl rollout undo deployment/veritas-web -n veritas

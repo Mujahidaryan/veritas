@@ -1,0 +1,65 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: veritas-prod
+    environment: production
+
+rule_files:
+  - "veritas-alerts.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+scrape_configs:
+  # ─── Veritas API ──────────────────────────────────────────────────
+  - job_name: veritas-api
+    static_configs:
+      - targets: ["veritas-api-service:4000"]
+    metrics_path: /api/metrics
+    scrape_interval: 10s
+
+  # ─── Kubernetes nodes ─────────────────────────────────────────────
+  - job_name: kubernetes-nodes
+    scheme: https
+    tls_config:
+      ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+    kubernetes_sd_configs:
+      - role: node
+    relabel_configs:
+      - action: labelmap
+        regex: __meta_kubernetes_node_label_(.+)
+
+  # ─── Kubernetes pods ──────────────────────────────────────────────
+  - job_name: kubernetes-pods
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: ["veritas"]
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: true
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+        action: replace
+        target_label: __metrics_path__
+        regex: (.+)
+
+  # ─── Hyperledger Fabric peer ──────────────────────────────────────
+  - job_name: fabric-peer
+    static_configs:
+      - targets: ["veritas-fabric-peer:9444"]
+    scrape_interval: 30s
+
+  # ─── PostgreSQL exporter ──────────────────────────────────────────
+  - job_name: postgres
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+
+  # ─── Redis exporter ───────────────────────────────────────────────
+  - job_name: redis
+    static_configs:
+      - targets: ["redis-exporter:9121"]

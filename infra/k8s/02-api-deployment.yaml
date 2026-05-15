@@ -1,0 +1,141 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: veritas-api
+  namespace: veritas
+  labels:
+    app: veritas-api
+    tier: backend
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: veritas-api
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0  # Zero-downtime deployments
+  template:
+    metadata:
+      labels:
+        app: veritas-api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "4000"
+        prometheus.io/path: "/api/metrics"
+    spec:
+      serviceAccountName: veritas-api-sa
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+        - name: api
+          image: gcr.io/YOUR_GCP_PROJECT/veritas-api:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 4000
+              name: http
+          envFrom:
+            - configMapRef:
+                name: veritas-config
+            - secretRef:
+                name: veritas-secrets
+          env:
+            - name: REDIS_HOST
+              value: "veritas-redis-service"
+            - name: FABRIC_PEER_ENDPOINT
+              value: "veritas-fabric-peer:7051"
+            - name: VERIFICATION_BASE_URL
+              value: "https://verify.veritas.io"
+            - name: CORS_ORIGINS
+              value: "https://app.veritas.io,https://verify.veritas.io"
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "512Mi"
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 4000
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 4000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: fabric-certs
+              mountPath: /app/certs
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: fabric-certs
+          secret:
+            secretName: veritas-fabric-certs
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: veritas-api
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: veritas-api-service
+  namespace: veritas
+spec:
+  selector:
+    app: veritas-api
+  ports:
+    - port: 4000
+      targetPort: 4000
+      name: http
+  type: ClusterIP
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: veritas-api-hpa
+  namespace: veritas
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: veritas-api
+  minReplicas: 3
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 65
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 75
