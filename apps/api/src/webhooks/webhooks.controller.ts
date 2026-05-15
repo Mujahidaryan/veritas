@@ -13,11 +13,11 @@ import { JwtPayload } from '@veritas/shared-types';
 
 class CreateWebhookDto {
   @IsUrl()
-  url: string;
+  url!: string;
 
   @IsArray()
   @IsString({ each: true })
-  events: string[];
+  events!: string[];
 }
 
 @ApiTags('Webhooks')

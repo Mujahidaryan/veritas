@@ -1,0 +1,13 @@
+# Never include these in Vercel builds
+apps/api
+contracts
+infra
+packages/hashing-engine
+packages/blockchain-client
+packages/sdk
+
+# Build artifacts
+**/node_modules
+**/.turbo
+**/dist
+**/*.log

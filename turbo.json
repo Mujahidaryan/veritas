@@ -6,6 +6,26 @@
       "dependsOn": ["^build"],
       "outputs": [".next/**", "dist/**"]
     },
+    "@veritas/web#build": {
+      "dependsOn": ["@veritas/shared-types#build"],
+      "outputs": [".next/**"],
+      "env": ["NEXT_PUBLIC_API_URL", "NEXT_PUBLIC_VERIFICATION_URL"]
+    },
+    "@veritas/verification-portal#build": {
+      "dependsOn": ["@veritas/shared-types#build"],
+      "outputs": [".next/**"],
+      "env": ["NEXT_PUBLIC_API_URL"]
+    },
+    "@veritas/shared-types#build": {
+      "outputs": ["dist/**"]
+    },
+    "@veritas/hashing-engine#build": {
+      "outputs": ["dist/**"]
+    },
+    "@veritas/blockchain-client#build": {
+      "dependsOn": ["@veritas/shared-types#build"],
+      "outputs": ["dist/**"]
+    },
     "dev": {
       "cache": false,
       "persistent": true

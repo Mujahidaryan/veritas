@@ -13,15 +13,19 @@
     "baseUrl": "./",
     "incremental": true,
     "skipLibCheck": true,
+    "strict": false,
     "strictNullChecks": false,
     "noImplicitAny": false,
     "strictBindCallApply": false,
-    "forceConsistentCasingInFileNames": false,
+    "strictPropertyInitialization": false,
+    "forceConsistentCasingInFileNames": true,
     "noFallthroughCasesInSwitch": false,
     "paths": {
       "@veritas/shared-types": ["../../packages/shared-types/src/index.ts"],
       "@veritas/hashing-engine": ["../../packages/hashing-engine/src/index.ts"],
       "@veritas/blockchain-client": ["../../packages/blockchain-client/src/index.ts"]
     }
-  }
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "test"]
 }

@@ -6,16 +6,13 @@
     "moduleResolution": "node",
     "declaration": true,
     "strict": false,
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
-    "noImplicitReturns": false,
-    "noFallthroughCasesInSwitch": false,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "outDir": "dist",
-    "baseUrl": "."
+    "rootDir": "src"
   },
-  "exclude": ["node_modules", "dist", ".next", "apps", "contracts"]
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
 }
