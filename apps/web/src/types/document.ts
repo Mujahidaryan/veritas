@@ -1,4 +1,3 @@
-import type { BlockchainProof } from './blockchain';
 export type DocumentStatus = 'active' | 'revoked' | 'expired';
 
 export type DocumentType =
@@ -16,7 +15,7 @@ export interface DocumentMetadata {
   type: DocumentType;
   title: string;
   issuedTo?: string;
-  expiresAt?: string; // ISO date string
+  expiresAt?: string;
   tags?: string[];
   customFields?: Record<string, string>;
 }
@@ -53,7 +52,16 @@ export interface VerifyDocumentResponse {
     organization: string;
     logoUrl?: string;
   };
-  blockchainProof?: BlockchainProof;
+  blockchainProof?: {
+    txId: string;
+    blockNumber: number;
+    channelId: string;
+    chaincodeName: string;
+    timestamp: string;
+    endorsers: string[];
+    hashOnChain: string;
+    proofUrl?: string;
+  };
   verifiedAt: string;
 }
 
@@ -64,7 +72,6 @@ export interface RevokeDocumentRequest {
 export interface BatchIssueRequest {
   departmentId: string;
   documents: Array<{
-    file: Buffer;
     metadata: DocumentMetadata;
     expiresAt?: string;
   }>;
@@ -80,5 +87,3 @@ export interface BatchIssueResponse {
     error?: string;
   }>;
 }
-
-import type { BlockchainProof } from './blockchain';
