@@ -1,11 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard, FileCheck, Shield, Users,
-  Settings, BarChart2, Webhook, LogOut,
-  Building2, Activity,
+  Settings, BarChart2, Webhook,
+  Building2, Activity, LogOut,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useAuthStore } from '@/store/auth.store';
@@ -24,7 +24,13 @@ const navItems = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const { user, logout } = useAuthStore();
+
+  const handleLogout = () => {
+    logout();
+    router.push('/login');
+  };
 
   return (
     <aside className="w-[var(--sidebar-width)] flex-shrink-0 bg-white border-r border-slate-200 flex flex-col">
@@ -41,7 +47,8 @@ export function Sidebar() {
       {/* Nav */}
       <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
         {navItems.map((item) => {
-          const active = pathname === item.href || pathname.startsWith(item.href + '/');
+          const active =
+            pathname === item.href || pathname.startsWith(item.href + '/');
           return (
             <Link
               key={item.href}
@@ -59,17 +66,23 @@ export function Sidebar() {
       <div className="px-3 py-3 border-t border-slate-200">
         <div className="flex items-center gap-2 px-2 py-1.5 mb-1">
           <div className="w-7 h-7 bg-brand-100 rounded-full flex items-center justify-center text-brand-700 text-xs font-semibold flex-shrink-0">
-            {user?.firstName?.[0]?.toUpperCase() ?? 'U'}
+            {user?.firstName?.[0]?.toUpperCase() ??
+              user?.email?.[0]?.toUpperCase() ??
+              'U'}
           </div>
           <div className="overflow-hidden">
             <p className="text-xs font-medium text-slate-900 truncate">
-              {user?.firstName} {user?.lastName}
+              {user?.firstName
+                ? `${user.firstName} ${user.lastName ?? ''}`
+                : user?.email ?? 'User'}
             </p>
-            <p className="text-xs text-slate-500 truncate">{user?.role}</p>
+            <p className="text-xs text-slate-500 capitalize truncate">
+              {user?.role?.toLowerCase().replace('_', ' ') ?? 'Member'}
+            </p>
           </div>
         </div>
         <button
-          onClick={logout}
+          onClick={handleLogout}
           className="sidebar-link w-full text-red-600 hover:bg-red-50 hover:text-red-700"
         >
           <LogOut size={15} />
