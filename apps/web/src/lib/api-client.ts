@@ -1,7 +1,10 @@
-import axios, { AxiosInstance, AxiosError } from 'axios';
-import { useAuthStore } from '@/store/auth.store';
+'use client';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api';
+import axios from 'axios';
+import type { AxiosInstance, AxiosError } from 'axios';
+
+const API_URL =
+  process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api';
 
 export const apiClient: AxiosInstance = axios.create({
   baseURL: API_URL,
@@ -12,63 +15,60 @@ export const apiClient: AxiosInstance = axios.create({
 // ─── Request interceptor — inject auth token ──────────────────────
 apiClient.interceptors.request.use((config) => {
   if (typeof window !== 'undefined') {
-    const token = useAuthStore.getState().accessToken;
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
+    try {
+      const raw = sessionStorage.getItem('veritas-auth');
+      if (raw) {
+        const state = JSON.parse(raw) as { state?: { accessToken?: string } };
+        const token = state?.state?.accessToken;
+        if (token) config.headers.Authorization = `Bearer ${token}`;
+      }
+    } catch { /* sessionStorage not available */ }
   }
   return config;
 });
 
-// ─── Response interceptor — handle 401, token refresh ─────────────
-let refreshing = false;
-let refreshQueue: Array<(token: string) => void> = [];
-
+// ─── Response interceptor — handle 401 ────────────────────────────
 apiClient.interceptors.response.use(
   (response) => response.data,
   async (error: AxiosError) => {
     const originalRequest = error.config as typeof error.config & { _retry?: boolean };
 
     if (error.response?.status === 401 && !originalRequest._retry) {
-      if (refreshing) {
-        // Queue request until refresh completes
-        return new Promise((resolve) => {
-          refreshQueue.push((token: string) => {
-            originalRequest.headers!.Authorization = `Bearer ${token}`;
-            resolve(apiClient(originalRequest));
-          });
-        });
-      }
-
       originalRequest._retry = true;
-      refreshing = true;
-
       try {
-        const refreshToken = useAuthStore.getState().refreshToken;
+        const raw = typeof window !== 'undefined'
+          ? sessionStorage.getItem('veritas-auth') : null;
+        const state = raw
+          ? (JSON.parse(raw) as { state?: { refreshToken?: string } }) : null;
+        const refreshToken = state?.state?.refreshToken;
         if (!refreshToken) throw new Error('No refresh token');
 
-        const response = await axios.post(`${API_URL}/auth/refresh`, { refreshToken });
-        const { accessToken } = response.data.data;
+        const res = await axios.post(`${API_URL}/auth/refresh`, { refreshToken });
+        const newAccess = (res.data as { data: { accessToken: string } }).data.accessToken;
 
-        useAuthStore.getState().setTokens(accessToken, refreshToken);
-        refreshQueue.forEach((cb) => cb(accessToken));
-        refreshQueue = [];
+        if (typeof window !== 'undefined') {
+          const current = JSON.parse(sessionStorage.getItem('veritas-auth') ?? '{}') as {
+            state?: Record<string, unknown>;
+          };
+          if (current.state) {
+            current.state.accessToken = newAccess;
+            sessionStorage.setItem('veritas-auth', JSON.stringify(current));
+          }
+        }
 
-        originalRequest.headers!.Authorization = `Bearer ${accessToken}`;
+        originalRequest.headers!.Authorization = `Bearer ${newAccess}`;
         return apiClient(originalRequest);
       } catch {
-        useAuthStore.getState().logout();
         if (typeof window !== 'undefined') {
+          sessionStorage.removeItem('veritas-auth');
           window.location.href = '/login';
         }
         return Promise.reject(error);
-      } finally {
-        refreshing = false;
       }
     }
 
     return Promise.reject(
-      (error.response?.data as { error?: unknown })?.error ?? error.message
+      (error.response?.data as { error?: unknown })?.error ?? error.message,
     );
   },
 );

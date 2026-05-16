@@ -1,6 +1,8 @@
+'use client';
+
 import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
-import type { User } from '@veritas/shared-types';
+import { persist } from 'zustand/middleware';
+import type { User } from '@/types';
 
 interface AuthState {
   accessToken: string | null;
@@ -27,19 +29,17 @@ export const useAuthStore = create<AuthState>()(
       setUser: (user) => set({ user }),
 
       logout: () =>
-        set({ accessToken: null, refreshToken: null, user: null, isAuthenticated: false }),
+        set({
+          accessToken: null,
+          refreshToken: null,
+          user: null,
+          isAuthenticated: false,
+        }),
     }),
     {
       name: 'veritas-auth',
-      storage: createJSONStorage(() =>
-        typeof window !== 'undefined' ? sessionStorage : ({} as Storage)
-      ),
-      partialize: (state) => ({
-        accessToken: state.accessToken,
-        refreshToken: state.refreshToken,
-        user: state.user,
-        isAuthenticated: state.isAuthenticated,
-      }),
+      // Only run in browser — safe for SSR
+      skipHydration: true,
     },
   ),
 );

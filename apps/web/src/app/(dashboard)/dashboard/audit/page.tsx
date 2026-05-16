@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Activity, RefreshCw } from 'lucide-react';
 import apiClient from '@/lib/api-client';
-import type { PaginatedAuditLogs, AuditEvent } from '@veritas/shared-types';
+import type { PaginatedAuditLogs, AuditEvent } from '@/types';
 
 const EVENT_COLORS: Record<string, string> = {
   'document.issued':      'badge-blue',

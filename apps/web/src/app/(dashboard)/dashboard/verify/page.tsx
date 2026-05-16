@@ -5,7 +5,7 @@ import { useDropzone } from 'react-dropzone';
 import { Shield, CheckCircle2, XCircle, AlertTriangle, Upload, ExternalLink } from 'lucide-react';
 import apiClient from '@/lib/api-client';
 import { useAuthStore } from '@/store/auth.store';
-import type { VerifyDocumentResponse } from '@veritas/shared-types';
+import type { VerifyDocumentResponse } from '@/types';
 
 export default function VerifyPage() {
   const [result, setResult] = useState<VerifyDocumentResponse | null>(null);

@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import apiClient from '@/lib/api-client';
-import type { AnalyticsSummary } from '@veritas/shared-types';
+import type { AnalyticsSummary } from '@/types';
 
 export default function DashboardPage() {
   const { data, isLoading } = useQuery({

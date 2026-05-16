@@ -9,7 +9,7 @@ import { Shield, Eye, EyeOff } from 'lucide-react';
 import toast from 'react-hot-toast';
 import apiClient from '@/lib/api-client';
 import { useAuthStore } from '@/store/auth.store';
-import type { AuthTokens } from '@veritas/shared-types';
+import type { AuthTokens } from '@/types';
 
 const loginSchema = z.object({
   tenantSlug: z.string().min(1, 'Required'),

@@ -25,8 +25,7 @@
     "tailwind-merge": "^2.3.0",
     "lucide-react": "^0.378.0",
     "date-fns": "^3.6.0",
-    "react-hot-toast": "^2.4.1",
-    "@veritas/shared-types": "*"
+    "react-hot-toast": "^2.4.1"
   },
   "devDependencies": {
     "@types/react": "^18.3.1",
